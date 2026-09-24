@@ -1,0 +1,124 @@
+# ==========================================================
+# SimulatorAssistant (Qt 6 + MSVC2019) 忽略规则
+# 只提交源码与工程配置，忽略所有中间文件与生成产物
+# 注意：.gitignore 不支持行尾注释，注释必须单独占一行
+# ==========================================================
+
+# ---------- 构建输出目录 ----------
+build/
+build-*/
+[Bb]uild[Dd]ebug/
+[Bb]uild[Rr]elease/
+debug/
+release/
+Debug/
+Release/
+x64/
+x86/
+
+# Visual Studio 缓存
+.vs/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# ---------- MSVC 编译中间文件 ----------
+*.obj
+*.iobj
+*.pdb
+*.ipdb
+*.idb
+*.ilk
+*.tlog
+*.log
+*.exp
+*.lib
+*.pch
+*.res
+*.rsp
+*.metagen
+*.lastbuildstate
+*.unsuccessfulbuild
+*.VC.db
+*.VC.opendb
+*.VC.db-shm
+*.VC.db-wal
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.sdf
+*.cachefile
+
+# ---------- 可执行文件 / 动态库 ----------
+*.exe
+*.dll
+*.so
+*.so.*
+*.dylib
+*.a
+*.o
+*.out
+*.app
+
+# ---------- qmake / Qt 生成文件 ----------
+.qmake.stash
+.qmake.cache
+Makefile
+Makefile.*
+!Makefile.am
+
+# uic 由 .ui 生成
+ui_*.h
+
+# moc 生成
+moc_*.cpp
+moc_*.h
+moc_predefs.h
+
+# rcc 生成
+qrc_*.cpp
+*.moc
+*.qrc.depends
+object_script.*
+*.prl
+
+# ---------- Qt Creator / IDE 本地配置 ----------
+.qtcreator/
+*.pro.user
+*.pro.user.*
+*.autosave
+CMakeLists.txt.user
+
+# ---------- 模型 / 大体积资源 ----------
+models/
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+
+# ---------- 编辑器 / 系统杂项 ----------
+.vscode/
+.idea/
+
+# WorkBuddy 本地工程数据
+.workbuddy/
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 日志与运行期产物 ----------
+logs/
+*.log.*
+*.stackdump
+core
+core.*
