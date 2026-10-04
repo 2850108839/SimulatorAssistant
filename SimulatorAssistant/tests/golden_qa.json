@@ -1,0 +1,24 @@
+{
+  "_note": "RAG 检索黄金集（离线评测用）。每条包含：q=问题，expect_sources=期望命中的来源文件名（任意一个出现在 top-k 即算来源命中），expect_keywords=期望在命中片段文本中出现的关键词（可选），must=是否必须命中（true 时未命中则整体判失败）。请把 q / 文件名 / 关键词替换成你真实知识库的内容；空 questions 时 eval_retrieval.py 只做缓存完整性体检。",
+  "topk": 3,
+  "questions": [
+    {
+      "q": "如何配置转发监控？",
+      "expect_sources": ["监控配置.docx"],
+      "expect_keywords": ["转发"],
+      "must": true
+    },
+    {
+      "q": "告警阈值应该怎么设置？",
+      "expect_sources": ["告警策略.docx"],
+      "expect_keywords": ["阈值"],
+      "must": false
+    },
+    {
+      "q": "导出报表支持哪些格式？",
+      "expect_sources": ["报表导出.doc"],
+      "expect_keywords": ["Excel", "PDF"],
+      "must": false
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# 构建中间产物（moc / ui / obj / rcc）
+build/
+
+# Qt Creator 用户配置（含绝对路径，不入库）
+.qtcreator/
+*.pro.user
+*.pro.user.*
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 运行时生成的 RAG 缓存与指标日志（由程序自动生成到知识库父目录）
+.rag_cache_*.bin
+rag_metrics.jsonl
+
+# 操作系统 / 编辑器临时文件
+*.tmp
+*~
+.DS_Store
+Thumbs.db
