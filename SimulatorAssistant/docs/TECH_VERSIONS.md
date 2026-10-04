@@ -34,18 +34,20 @@
 |---|---|---|
 | Python | **3.14.7（64-bit）** | Anaconda 根目录 D:\ProgramData\anaconda3，MSC v.1944 |
 | pip | 25.3 | 源：华为云镜像 mirrors.huaweicloud.com |
-| transformers | 5.18.0 | 加载 bge 模型、tokenizer |
-| optimum | 2.3.0 | ORTModelForFeatureExtraction 导出 |
+| transformers | 4.57.6 | 加载 bge 模型、tokenizer（optimum[onnxruntime] 解析后的兼容版本） |
+| optimum | 2.1.0 | ORTModelForFeatureExtraction 导出（需额外装 extras，见下） |
+| optimum-onnx | 0.1.0 | optimum 的 ONNX Runtime 独立集成包（`pip install "optimum[onnxruntime]"` 引入） |
 | onnx | 1.23.1 | 模型图操作 / 校验 |
 | onnxruntime | 1.30.0 | 导出脚本验证、双后端对比（cp314 wheel） |
 | sentencepiece | 0.2.2 | bge tokenizer 依赖 |
 | torch | 2.14.1 | optimum 导出后端 |
 | numpy | 2.5.3 | 向量运算 |
-| huggingface-hub | 1.33.0 | 模型下载（若本地无缓存） |
-| tokenizers | 0.23.2 | transformers 依赖 |
+| huggingface-hub | 0.36.2 | 模型下载（optimum[onnxruntime] 解析后的兼容版本） |
+| tokenizers | 0.22.2 | transformers 依赖（同上） |
 | safetensors | 0.8.0 | 权重格式 |
 
-> 注：pip 安装时 transformers 依赖的 huggingface-hub 曾先解析到 2.1.1、后回落为 1.33.0，最终以 1.33.0 生效（pip 自动解决）。
+> 注 1：optimum 2.x 的 ONNX Runtime 集成拆到独立 extras，直接 `pip install optimum` 不含 `optimum.onnxruntime` 模块，必须 `pip install "optimum[onnxruntime]"`；该 extras 会把 transformers/optimum/huggingface-hub 解析为上述兼容组合（曾先装到 transformers 5.18.0/optimum 2.3.0/hub 1.33.0，后被 extras 回落）。
+> 注 2：导出产物 `D:/CAI/llama/llama.cpp/models/bge_onnx/`：model.onnx（FP32，90.4MB）、model_int8.onnx（INT8 动态量化，22.8MB）、vocab.txt（109KB）；ORT 模型输入 input_ids/attention_mask/token_type_ids（int64），输出 last_hidden_state [batch, seq, 512]（已用 tools/verify_bge_onnx.py 实测通过）。
 
 ## 五、配置与发布要点
 
