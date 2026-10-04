@@ -19,6 +19,16 @@ INCLUDEPATH += $$LLAMA_DIR/include $$LLAMA_DIR/ggml/include
 LIBS += $$LLAMA_DIR/build/src/Release/llama.lib \
         $$LLAMA_DIR/build/ggml/src/Release/ggml.lib
 
+# -----------------------------------------------------------------------------
+# 外部依赖：ONNX Runtime（方案 A —— 嵌入推理第二后端）
+# 可用环境变量 ORT_DIR 覆盖默认路径；未设置时回退到下方默认目录。
+# 运行时需将 onnxruntime.dll、onnxruntime_providers_shared.dll 拷贝到 exe 同目录。
+# -----------------------------------------------------------------------------
+ORT_DIR = $$(ORT_DIR)
+isEmpty(ORT_DIR): ORT_DIR = D:/CAI/llama/onnxruntime/onnxruntime-win-x64-1.30.0
+INCLUDEPATH += $$ORT_DIR/include
+LIBS += $$ORT_DIR/lib/onnxruntime.lib
+
 # Qt 私有头（qzipreader_p.h，用于解压 .docx）
 # - 通过 core-private / gui-private 模块自动引入私有包含路径（正规做法）
 # - 同时显式加入版本化目录 QtCore/6.5.3、QtGui/6.5.3，
@@ -39,12 +49,14 @@ SOURCES += \
     app/SimulatorAssistant/main.cpp \
     module/Engine/LLMWorker.cpp \
     module/Rag/RagEngine.cpp \
+    module/Rag/OnnxEmbedder.cpp \
     app/SimulatorAssistant/mainwindow.cpp
 
 HEADERS += \
     ../../../..//Qt/6.5.3/msvc2019_64/include/QtGui/6.5.3/QtGui/private/qtguiglobal_p.h \
     module/Engine/LLMWorker.h \
     module/Rag/RagEngine.h \
+    module/Rag/OnnxEmbedder.h \
     app/SimulatorAssistant/mainwindow.h
 
 FORMS += \
