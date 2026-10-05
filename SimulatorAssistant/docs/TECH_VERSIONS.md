@@ -53,5 +53,6 @@
 
 - `.pro` 环境变量覆盖：`LLAMA_DIR`（默认 D:/CAI/llama/llama.cpp）、`ORT_DIR`（默认 D:/CAI/llama/onnxruntime/onnxruntime-win-x64-1.30.0），未设置时回退默认路径。
 - 链接：`llama.lib`（build/src/Release）+ `ggml.lib`（build/ggml/src/Release）+ `onnxruntime.lib`（$$ORT_DIR/lib）。
-- **运行时 DLL（发布必带）**：llama.dll（如有）、ggml.dll（如有）、**onnxruntime.dll**、**onnxruntime_providers_shared.dll** 需与 exe 同目录。
+- **运行时 DLL（发布必带，都在 `$$ORT_DIR\lib\` 下，不是顶层）**：**onnxruntime.dll**（16.4MB）、**onnxruntime_providers_shared.dll** 需与 exe 同目录；llama.dll / ggml.dll 如有同样处理。
+- 踩坑：exe 目录缺少 onnxruntime.dll 时，Windows 会从 PATH 找到系统残留的旧版本（实测加载到 1.17.1 导致 "requested API version [30] not available"）——务必让 exe 同目录的 DLL 版本与链接的 lib 一致。
 - Python 3.14 属较新版本：onnxruntime/transformers 均已提供 cp314 wheel，兼容性已实测通过。
