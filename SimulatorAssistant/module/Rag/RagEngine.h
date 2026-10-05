@@ -14,7 +14,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDateTime>
-#include "llama.h"
+#include "OnnxEmbedder.h"   // IEmbedder 接口（llama.cpp / ONNX Runtime 双后端）
 
 // 知识库中的一个分块
 struct RagChunk {
@@ -52,8 +52,12 @@ public:
     RagEngine();
     ~RagEngine();
 
-    // 加载 bge 嵌入模型（GGUF）。成功返回 true
+    // 加载 bge 嵌入模型。后端由调用方决定：
+    //  loadModel()    —— llama.cpp 后端（bge GGUF，默认）
+    //  loadOnnxModel()—— ONNX Runtime 后端（bge .onnx + 同目录 vocab.txt，方案 A）
+    // 二者互斥，后加载者替换前者。成功返回 true
     bool loadModel(const QString &modelPath);
+    bool loadOnnxModel(const QString &modelPath);
 
     // 同步建索引并安装（保留旧 API，供测试/兜底使用）
     int loadKnowledgeBase(const QString &dir);
@@ -69,7 +73,7 @@ public:
     // 检索：向量 top-k 候选 + BM25 词法融合重排（混合检索），低于阈值的命中整体丢弃。
     RagResult retrieve(const QString &query, int topK = 3, float threshold = 0.22f);
 
-    bool isModelLoaded() const { return m_model != nullptr; }
+    bool isModelLoaded() const { return m_embedder && m_embedder->isLoaded(); }
     bool isIndexed()     const;
     int  chunkCount()    const;
 
@@ -97,7 +101,6 @@ private:
     std::vector<std::vector<float>> embedBatch(const QStringList &texts);
 
     static float dot(const std::vector<float> &a, const std::vector<float> &b);
-    static void  normalize(std::vector<float> &v);
 
     // 语义边界分块：按句号/问号/感叹号/分号/换行切句，再贪心合并成 ≤ kChunkChars 的块
     static QStringList splitChunks(const QString &text);
@@ -120,15 +123,13 @@ private:
 
     void logMetrics(const QString &query, const RagResult &r) const;
 
-    llama_model        * m_model = nullptr;
-    llama_context      * m_ctx   = nullptr;
-    const llama_vocab  * m_vocab = nullptr;
-    int                  m_nEmbd = 0;
+    std::unique_ptr<IEmbedder> m_embedder;   // 嵌入后端（llama.cpp / ONNX Runtime 二选一）
+    int m_nEmbd = 0;                         // 嵌入维度（缓存维度一致性校验用）
     std::atomic<bool>   m_enabled{false};
 
     std::shared_ptr<IndexSnapshot> m_snapshot;   // 当前索引（不可变快照，原子替换）
     std::mutex m_mutex;        // 保护 m_snapshot 的替换
-    std::mutex m_encodeMutex;  // 串行化 embed()（bge 上下文不可重入）
+    std::mutex m_encodeMutex;  // 串行化 embed()（嵌入后端不可重入）
 
     float m_threshold = 0.22f; // 向量余弦门槛：低于则视为"知识库未覆盖"，不注入参考资料
     float m_alpha = 0.6f;      // 混合检索融合权重：向量 0.6 + BM25 0.4

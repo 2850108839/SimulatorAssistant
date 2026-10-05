@@ -50,13 +50,14 @@ SOURCES += \
     module/Engine/LLMWorker.cpp \
     module/Rag/RagEngine.cpp \
     module/Rag/OnnxEmbedder.cpp \
+    module/Rag/LlamaEmbedder.cpp \
     app/SimulatorAssistant/mainwindow.cpp
 
 HEADERS += \
-    ../../../..//Qt/6.5.3/msvc2019_64/include/QtGui/6.5.3/QtGui/private/qtguiglobal_p.h \
     module/Engine/LLMWorker.h \
     module/Rag/RagEngine.h \
     module/Rag/OnnxEmbedder.h \
+    module/Rag/LlamaEmbedder.h \
     app/SimulatorAssistant/mainwindow.h
 
 FORMS += \

@@ -30,6 +30,10 @@ static void ensureConfigFile() {
                QStringLiteral("D:/CAI/llama/llama.cpp/models/qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"));
     s.setValue(QStringLiteral("model/bge_path"),
                QStringLiteral("D:/CAI/llama/llama.cpp/models/bge-small-zh-v1.5-q8_0.gguf"));
+    // 嵌入后端：llama（默认，llama.cpp 加载 GGUF）| onnx（ONNX Runtime 加载 .onnx，方案 A）
+    s.setValue(QStringLiteral("model/embed_backend"), QStringLiteral("llama"));
+    s.setValue(QStringLiteral("model/bge_onnx_path"),
+               QStringLiteral("D:/CAI/llama/llama.cpp/models/bge_onnx/model_int8.onnx"));
     s.sync();
 }
 
@@ -67,14 +71,29 @@ MainWindow::MainWindow(QWidget *parent)
                               Q_ARG(QString, sysPrompt));
 
     // 2) 启动 RAG 引擎：加载 bge 嵌入模型（同步，很快），建索引放到后台线程（避免卡 UI）
+    //    嵌入后端由 config.ini 的 model/embed_backend 决定（llama | onnx）
     m_rag = new RagEngine;
-    const QString bgePath = readModelConfig(QStringLiteral("model/bge_path"),
-        QStringLiteral("D:/CAI/llama/llama.cpp/models/bge-small-zh-v1.5-q8_0.gguf"));
+    const QString embedBackend = readModelConfig(QStringLiteral("model/embed_backend"),
+                                                 QStringLiteral("llama"));
+    bool ragLoaded = false;
+    if (embedBackend.compare(QStringLiteral("onnx"), Qt::CaseInsensitive) == 0) {
+        const QString onnxPath = readModelConfig(QStringLiteral("model/bge_onnx_path"),
+            QStringLiteral("D:/CAI/llama/llama.cpp/models/bge_onnx/model_int8.onnx"));
+        ragLoaded = m_rag->loadOnnxModel(onnxPath);
+        if (ragLoaded)
+            qDebug() << "[RAG] 嵌入后端 = ONNX Runtime";
+    } else {
+        const QString bgePath = readModelConfig(QStringLiteral("model/bge_path"),
+            QStringLiteral("D:/CAI/llama/llama.cpp/models/bge-small-zh-v1.5-q8_0.gguf"));
+        ragLoaded = m_rag->loadModel(bgePath);
+        if (ragLoaded)
+            qDebug() << "[RAG] 嵌入后端 = llama.cpp";
+    }
     // 知识库目录：优先读持久化配置（QSettings），否则用默认目录
     QSettings settings(QStringLiteral("CAI"), QStringLiteral("SimulatorAssistant"));
     m_kbDir = settings.value(QStringLiteral("rag/kbDir"),
                              QStringLiteral("D:/CAI/code/SimulatorAssistant/knowledge_base")).toString();
-    if (m_rag->loadModel(bgePath)) {
+    if (ragLoaded) {
         m_worker->setRagEngine(m_rag);
         // 检索指标日志（JSONL）：每次提问记录向量最佳分/耗时/命中来源，用于离线分析检索质量
         m_rag->setMetricsLogPath(QFileInfo(m_kbDir).absolutePath()

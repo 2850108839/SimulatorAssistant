@@ -24,7 +24,11 @@ static std::wstring utf8ToWide(const std::string& s) {
 // ------------------------------------------------------------------
 // ORT session 加载
 // ------------------------------------------------------------------
-bool OnnxEmbedder::load(const std::string& modelPath, const std::string& vocabPath) {
+bool OnnxEmbedder::loadModel(const std::string& modelPath) {
+    // vocab.txt 约定与模型同目录（export_bge_onnx.py 产物）
+    const size_t slash = modelPath.find_last_of("/\\");
+    std::string vocabPath = (slash == std::string::npos)
+        ? "vocab.txt" : modelPath.substr(0, slash + 1) + "vocab.txt";
     if (!loadVocab(vocabPath)) return false;
 
     m_env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "rag-onnx");
@@ -54,6 +58,9 @@ bool OnnxEmbedder::load(const std::string& modelPath, const std::string& vocabPa
         m_outNames.emplace_back(name.get());
     }
     m_memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    // 输出 last_hidden_state 最后一维 = 嵌入维度（bge-small-zh = 512）
+    const auto outShape = m_session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+    if (!outShape.empty()) m_dim = (int)outShape.back();
     return !m_inNames.empty() && !m_outNames.empty();
 }
 
@@ -144,7 +151,10 @@ std::string OnnxEmbedder::norm(const std::string& s) const {
 }
 
 std::vector<std::string> OnnxEmbedder::splitBasic(const std::string& text) const {
-    // 中文（UTF-8 3 字节，0xE4-0xE9 起始）逐字切；ASCII 按空白分词
+    // 对齐 BERT BasicTokenizer：
+    //  - 中文（UTF-8 多字节，0xE4-0xE9 起始）逐字切，全角标点整体保留；
+    //  - ASCII 按空白分词，字母/数字累积，标点独立成 token（"device?" -> "device" + "?"，
+    //    否则 "device?" 整体查词表落 [UNK]，向量与 llama.cpp 端严重偏离）
     std::vector<std::string> out;
     std::string cur;
     size_t i = 0;
@@ -157,7 +167,15 @@ std::vector<std::string> OnnxEmbedder::splitBasic(const std::string& text) const
         } else if (c <= 0x20) { // 空白
             if (!cur.empty()) { out.push_back(cur); cur.clear(); }
             ++i;
-        } else {
+        } else if (c < 0x80) {  // ASCII
+            if (std::isalnum(c)) {
+                cur += (char)c;
+            } else {
+                if (!cur.empty()) { out.push_back(cur); cur.clear(); }
+                out.emplace_back(1, (char)c);      // 标点独立 token
+            }
+            ++i;
+        } else {                // 其他多字节（全角标点等）：整体累积
             cur += (char)c;
             ++i;
         }
@@ -166,20 +184,33 @@ std::vector<std::string> OnnxEmbedder::splitBasic(const std::string& text) const
     return out;
 }
 
-int OnnxEmbedder::lookupWithSubword(const std::string& token) const {
+std::vector<int> OnnxEmbedder::wordPiece(const std::string& token) const {
+    // 整体命中直接返回
     auto it = m_vocab.find(token);
-    if (it != m_vocab.end()) return it->second;
-    // 最长匹配 + ## 后缀（WordPiece 子词切分）
-    for (size_t len = token.size(); len >= 1; --len) {
-        std::string prefix = token.substr(0, len);
-        auto pit = m_vocab.find(prefix);
-        if (pit != m_vocab.end()) {
-            std::string rest = "##" + token.substr(len);
-            auto rit = m_vocab.find(rest);
-            if (rit != m_vocab.end()) return rit->second; // 简化：只拆一层，够中文场景用
+    if (it != m_vocab.end()) return {it->second};
+
+    // 标准 WordPiece：从左到右最长匹配，首段不带 ##，后续段带 ## 前缀
+    std::vector<int> ids;
+    size_t start = 0;
+    while (start < token.size()) {
+        size_t end = token.size();
+        std::string piece;
+        bool found = false;
+        while (start < end) {
+            std::string cand = token.substr(start, end - start);
+            if (start > 0) cand = "##" + cand;
+            auto cit = m_vocab.find(cand);
+            if (cit != m_vocab.end()) { piece = cand; found = true; break; }
+            --end;
         }
+        if (!found) {                       // 拆不出合法子词：整体 [UNK]
+            int unk = m_vocab.count("[UNK]") ? m_vocab.at("[UNK]") : 100;
+            return {unk};
+        }
+        ids.push_back(m_vocab.at(piece));
+        start = end;
     }
-    return m_vocab.count("[UNK]") ? m_vocab.at("[UNK]") : 100; // [UNK] 兜底
+    return ids;
 }
 
 std::vector<int> OnnxEmbedder::tokenize(const std::string& text, int maxSeq) const {
@@ -188,7 +219,11 @@ std::vector<int> OnnxEmbedder::tokenize(const std::string& text, int maxSeq) con
     for (const auto& piece : splitBasic(text)) {
         std::string t = norm(piece);
         if (t.empty()) continue;
-        ids.push_back(lookupWithSubword(t));
+        const std::vector<int> sub = wordPiece(t);
+        for (int id : sub) {
+            ids.push_back(id);
+            if ((int)ids.size() >= maxSeq - 1) break;
+        }
         if ((int)ids.size() >= maxSeq - 1) break;
     }
     ids.push_back(m_sepId);

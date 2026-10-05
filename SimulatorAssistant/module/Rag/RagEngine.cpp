@@ -1,4 +1,5 @@
 #include "RagEngine.h"
+#include "LlamaEmbedder.h"
 #include <cmath>
 #include <algorithm>
 #include <QDir>
@@ -13,7 +14,6 @@
 #include <QDebug>
 
 namespace {
-constexpr int     kNCtxEmb  = 512;  // bge 最大序列长度
 constexpr int     kChunkChars = 240; // 每块约 240 字（中文安全低于 512 token）
 constexpr int     kOverlap  = 40;   // 块间重叠，避免关键信息被边界切断
 constexpr quint32 kCacheVersion = 4; // 索引缓存格式版本；提取/分块/检索逻辑变更时必须 +1 以失效旧缓存
@@ -74,163 +74,49 @@ QString extractLatin1Runs(const QByteArray &data) {
 
 RagEngine::RagEngine() {}
 RagEngine::~RagEngine() {
-    if (m_ctx)   llama_free(m_ctx);
-    if (m_model) llama_model_free(m_model);
+    m_embedder.reset();   // 后端析构（llama 模型 / ORT session）
 }
 
 bool RagEngine::loadModel(const QString &modelPath) {
-    if (m_model) return true;
+    auto emb = std::make_unique<LlamaEmbedder>();
+    if (!emb->loadModel(modelPath.toStdString())) {
+        qWarning() << "[RAG] llama.cpp 嵌入模型加载失败:" << modelPath;
+        return false;
+    }
+    m_nEmbd = emb->dim();
+    m_embedder = std::move(emb);
+    qDebug() << "[RAG] 后端 = llama.cpp，bge 已加载，维度 =" << m_nEmbd;
+    return true;
+}
 
-    llama_model_params mp = llama_model_default_params();
-    m_model = llama_model_load_from_file(modelPath.toStdString().c_str(), mp);
-    if (!m_model) { qWarning() << "[RAG] 模型加载失败:" << modelPath; return false; }
-
-    llama_context_params cp = llama_context_default_params();
-    cp.n_ctx        = kNCtxEmb;
-    cp.n_batch      = kNCtxEmb;
-    cp.n_ubatch     = kNCtxEmb;
-    cp.n_seq_max    = 1;
-    cp.embeddings   = true;                       // 关键：开启嵌入输出
-    cp.pooling_type = LLAMA_POOLING_TYPE_CLS;    // bge 用 [CLS] 池化（与模型默认一致）
-    m_ctx = llama_init_from_model(m_model, cp);
-    if (!m_ctx) { qWarning() << "[RAG] 上下文创建失败"; return false; }
-
-    m_vocab  = llama_model_get_vocab(m_model);
-    m_nEmbd  = llama_model_n_embd_out(m_model);
-    qDebug() << "[RAG] bge 已加载，维度 =" << m_nEmbd;
+bool RagEngine::loadOnnxModel(const QString &modelPath) {
+    auto emb = std::make_unique<OnnxEmbedder>();
+    if (!emb->loadModel(modelPath.toStdString())) {
+        qWarning() << "[RAG] ONNX Runtime 嵌入模型加载失败:" << modelPath;
+        return false;
+    }
+    m_nEmbd = emb->dim();
+    m_embedder = std::move(emb);
+    qDebug() << "[RAG] 后端 = ONNX Runtime，bge 已加载，维度 =" << m_nEmbd;
     return true;
 }
 
 std::vector<float> RagEngine::embed(const QString &text) {
-    // bge 上下文不可重入：建索引（后台线程）与检索（worker 线程）的编码必须串行
+    if (!m_embedder || !m_embedder->isLoaded()) return {};
+    // 嵌入后端不可重入：建索引（后台线程）与检索（worker 线程）的编码必须串行
     std::lock_guard<std::mutex> encLock(m_encodeMutex);
-
-    const std::string s = text.toStdString();
-    std::vector<llama_token> toks(s.size() + 16);
-    int n = llama_tokenize(m_vocab, s.c_str(), (int32_t)s.size(),
-                           toks.data(), (int32_t)toks.size(), true, false);
-    if (n < 0) {                              // 缓冲区不足，扩容重试
-        toks.resize(-n + 16);
-        n = llama_tokenize(m_vocab, s.c_str(), (int32_t)s.size(),
-                           toks.data(), (int32_t)toks.size(), true, false);
-        if (n < 0) { qWarning() << "[RAG] tokenize 失败"; return {}; }
-    }
-    toks.resize(n);
-
-    // 必要时补 EOS（与官方 retrieval 范例一致）
-    const llama_token eos = llama_vocab_eos(m_vocab);
-    if (eos >= 0 && (toks.empty() || toks.back() != eos)) toks.push_back(eos);
-
-    // 单序列 batch，所有 token 都要求输出（logits=true）
-    llama_batch batch = llama_batch_init((int32_t)toks.size(), 0, 1);
-    for (int i = 0; i < (int)toks.size(); ++i) {
-        batch.token[i]     = toks[i];
-        batch.pos[i]       = i;
-        batch.n_seq_id[i]  = 1;
-        batch.seq_id[i][0] = 0;
-        batch.logits[i]    = 1;
-    }
-    batch.n_tokens = (int32_t)toks.size();
-
-    llama_memory_clear(llama_get_memory(m_ctx), false);   // 嵌入不需要 KV 缓存，清空避免串扰
-    // bge 是编码器模型：必须用 llama_encode（不是 llama_decode）；
-    // 用 decode 的话 llama.cpp 会打印 "calling encode() instead" 并内部回退，虽能算但会刷屏
-    if (llama_encode(m_ctx, batch) != 0) {
-        qWarning() << "[RAG] llama_encode 失败";
-        llama_batch_free(batch);
-        return {};
-    }
-
-    const float * emb = llama_get_embeddings_seq(m_ctx, 0);   // 取 seq 0 的均值池化向量
     std::vector<float> out;
-    if (emb) {
-        out.assign(emb, emb + m_nEmbd);
-        normalize(out);
-    } else {
-        qWarning() << "[RAG] 取嵌入失败（pooling_type 可能非 MEAN）";
-    }
-    llama_batch_free(batch);
+    m_embedder->embed(text.toStdString(), out, m_nEmbd);
     return out;
 }
 
 std::vector<std::vector<float>> RagEngine::embedBatch(const QStringList &texts) {
-    // bge 上下文不可重入：建索引（后台线程）与检索（worker 线程）的编码必须串行
+    if (!m_embedder || !m_embedder->isLoaded()) return {};
     std::lock_guard<std::mutex> encLock(m_encodeMutex);
-
-    std::vector<std::vector<float>> out(texts.size());
-    if (texts.isEmpty()) return out;
-
-    const int nCtx = (int)llama_n_ctx(m_ctx);
-
-    // 1) 先把每句 tokenize（与 embed() 同款：加 BOS、尾部补 EOS）
-    std::vector<std::vector<llama_token>> toks(texts.size());
-    const llama_token eos = llama_vocab_eos(m_vocab);
-    for (int i = 0; i < texts.size(); ++i) {
-        const std::string s = texts.at(i).toStdString();
-        std::vector<llama_token> t(s.size() + 16);
-        int n = llama_tokenize(m_vocab, s.c_str(), (int32_t)s.size(),
-                               t.data(), (int32_t)t.size(), true, false);
-        if (n < 0) {                              // 缓冲区不足，扩容重试
-            t.resize(-n + 16);
-            n = llama_tokenize(m_vocab, s.c_str(), (int32_t)s.size(),
-                               t.data(), (int32_t)t.size(), true, false);
-        }
-        if (n < 0) continue;                     // 失败：该句留空向量（与 embed() 一致）
-        t.resize(n);
-        if (eos >= 0 && (t.empty() || t.back() != eos)) t.push_back(eos);
-        toks[i] = std::move(t);
-    }
-
-    // 2) 贪心分组：每批累计 token 数不超过 n_ctx（bge 最大序列），单句不跨批拆开
-    size_t i = 0;
-    while (i < toks.size()) {
-        if (toks[i].empty()) { ++i; continue; }   // 空句直接跳过（结果已预留空向量）
-        std::vector<int> grp;
-        int used = 0;
-        while (i < toks.size() && !toks[i].empty()) {
-            const int len = (int)toks[i].size();
-            if (!grp.empty() && used + len > nCtx) break;   // 放不下则留给下一批
-            grp.push_back((int)i);
-            used += len;
-            ++i;
-            if (used >= nCtx) break;
-        }
-        if (grp.empty()) { ++i; continue; }
-
-        int totalTok = 0;
-        for (int g : grp) totalTok += (int)toks[g].size();
-
-        llama_batch batch = llama_batch_init(totalTok, 0, (int)grp.size());
-        int base = 0;
-        for (int gi = 0; gi < (int)grp.size(); ++gi) {
-            const int idx = grp[gi];
-            const int L = (int)toks[idx].size();
-            for (int j = 0; j < L; ++j) {
-                batch.token[base + j]     = toks[idx][j];
-                batch.pos[base + j]       = j;
-                batch.n_seq_id[base + j]  = 1;
-                batch.seq_id[base + j][0] = gi;   // 每个句子一个独立序列
-                batch.logits[base + j]    = 1;    // 全部要输出（池化用）
-            }
-            base += L;
-        }
-        batch.n_tokens = totalTok;
-
-        llama_memory_clear(llama_get_memory(m_ctx), false);
-        if (llama_encode(m_ctx, batch) == 0) {
-            for (int gi = 0; gi < (int)grp.size(); ++gi) {
-                const int idx = grp[gi];
-                const float *emb = llama_get_embeddings_seq(m_ctx, gi);
-                if (emb) {
-                    std::vector<float> v(emb, emb + m_nEmbd);
-                    normalize(v);
-                    out[idx] = std::move(v);
-                }
-            }
-        }
-        llama_batch_free(batch);
-    }
-    return out;
+    std::vector<std::string> t;
+    t.reserve((size_t)texts.size());
+    for (const QString &s : texts) t.push_back(s.toStdString());
+    return m_embedder->embedBatch(t, m_nEmbd);
 }
 
 // 语义边界分块：先按句子结束符切成最小语义单元，再贪心合并成不超过 kChunkChars 的块，
@@ -319,7 +205,7 @@ float RagEngine::bm25Score(const IndexSnapshot &s, int docId, const QStringList 
 
 std::vector<RagChunk> RagEngine::buildIndex(const QString &dir, const std::function<void(int,int)> &onProgress) {
     std::vector<RagChunk> newIndex;
-    if (!m_model || !m_ctx) { qWarning() << "[RAG] 模型未加载，无法建索引"; return newIndex; }
+    if (!m_embedder || !m_embedder->isLoaded()) { qWarning() << "[RAG] 模型未加载，无法建索引"; return newIndex; }
 
     QDir root(dir);
     if (!root.exists()) { qWarning() << "[RAG] 知识库目录不存在:" << dir; return newIndex; }
@@ -660,11 +546,4 @@ float RagEngine::dot(const std::vector<float> &a, const std::vector<float> &b) {
     float s = 0;
     for (size_t i = 0; i < a.size(); ++i) s += a[i] * b[i];
     return s;
-}
-
-void RagEngine::normalize(std::vector<float> &v) {
-    float n = 0;
-    for (float x : v) n += x * x;
-    n = std::sqrt(n);
-    if (n > 1e-9f) for (float &x : v) x /= n;
 }

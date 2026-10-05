@@ -1,6 +1,7 @@
 // tests/onnx_embedder_test.cpp —— 验证 ONNX Runtime 嵌入后端（方案 A）
-// 用法（命令行）：onnx_embedder_test.exe [model.onnx] [vocab.txt]
+// 用法（命令行）：onnx_embedder_test.exe [model.onnx]
 // 验证点：模型加载、embed 出 512 维向量、L2 归一化为 1、两个句子余弦相似度
+//（vocab.txt 约定与模型同目录，自动探测）
 #include "../module/Rag/OnnxEmbedder.h"
 #include <iostream>
 #include <vector>
@@ -16,12 +17,12 @@ static double cosine(const std::vector<float>& a, const std::vector<float>& b) {
 }
 
 int main(int argc, char** argv) {
-    const std::string modelPath = argc > 1 ? argv[1] : "D:/CAI/llama/llama.cpp/models/bge_onnx/model_int8.onnx";
-    const std::string vocabPath = argc > 2 ? argv[2] : "D:/CAI/llama/llama.cpp/models/bge_onnx/vocab.txt";
+    const std::string modelPath = argc > 1 ? argv[1]
+        : "D:/CAI/llama/llama.cpp/models/bge_onnx/model_int8.onnx";
 
     OnnxEmbedder emb;
-    if (!emb.load(modelPath, vocabPath)) {
-        std::cerr << "[FAIL] load 失败: " << modelPath << std::endl;
+    if (!emb.loadModel(modelPath)) {
+        std::cerr << "[FAIL] loadModel 失败: " << modelPath << std::endl;
         return 1;
     }
     std::cout << "[OK] 模型加载成功" << std::endl;
