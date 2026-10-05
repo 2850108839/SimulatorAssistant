@@ -9,6 +9,18 @@
 #include <cmath>
 #include <cstring>
 
+#ifdef _WIN32
+#include <windows.h>
+// Windows 上 ORTCHAR_T = wchar_t：模型路径必须转 UTF-16（同时支持中文路径）
+static std::wstring utf8ToWide(const std::string& s) {
+    if (s.empty()) return std::wstring();
+    const int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
+    return w;
+}
+#endif
+
 // ------------------------------------------------------------------
 // ORT session 加载
 // ------------------------------------------------------------------
@@ -22,7 +34,12 @@ bool OnnxEmbedder::load(const std::string& modelPath, const std::string& vocabPa
     so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // 图优化全开
     so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
+#ifdef _WIN32
+    const std::wstring wpath = utf8ToWide(modelPath);
+    m_session = std::make_unique<Ort::Session>(*m_env, wpath.c_str(), so);
+#else
     m_session = std::make_unique<Ort::Session>(*m_env, modelPath.c_str(), so);
+#endif
     const auto nIn  = m_session->GetInputCount();
     const auto nOut = m_session->GetOutputCount();
 
@@ -58,14 +75,17 @@ bool OnnxEmbedder::embed(const std::string& text, std::vector<float>& vec, int d
     const int seq = (int)ids.size();
     std::vector<int64_t> inputIds(ids.begin(), ids.end());
     std::vector<int64_t> attMask(seq, 1);          // 无 padding，全 1
+    std::vector<int64_t> segIds(seq, 0);           // token_type_ids：单句全 0（模型要求 3 输入）
 
     std::array<int64_t, 2> shape{1, (int64_t)seq};
     Ort::Value inIds  = Ort::Value::CreateTensor<int64_t>(m_memInfo, inputIds.data(), inputIds.size(), shape.data(), shape.size());
     Ort::Value inMask = Ort::Value::CreateTensor<int64_t>(m_memInfo, attMask.data(), attMask.size(), shape.data(), shape.size());
+    Ort::Value inSeg  = Ort::Value::CreateTensor<int64_t>(m_memInfo, segIds.data(), segIds.size(), shape.data(), shape.size());
 
     std::vector<Ort::Value> inputs;
     inputs.emplace_back(std::move(inIds));
     inputs.emplace_back(std::move(inMask));
+    inputs.emplace_back(std::move(inSeg));
 
     std::vector<const char*> inNames, outNames;
     for (auto& n : m_inNames)  inNames.push_back(n.c_str());
