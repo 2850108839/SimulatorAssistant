@@ -1,48 +1,54 @@
 {
-  "_note": "RAG 检索黄金集（离线评测用，2026-10-06 真实化）。题目基于 knowledge_base 真实内容反推：项目说明.txt（真实可读）+ 模拟器软件用户使用手册（2025.6.30更新）.doc（仅少量可读片段——该 .doc 为 WPS 损坏格式，正文 95% 乱码，Word COM 亦无法转换，详见工程复盘）。eval_retrieval.py 用 BM25 词法腿复现混合检索的词法部分。",
+  "_note": "RAG 检索黄金集（离线评测用，2026-10-06 手册版）。手册 .doc 原为 WPS 格式，Word COM / UTF-16LE 扫描均无法解析（误判为损坏）；2026-10-06 用 WPS COM（KWPS.Application）成功转为 模拟器软件用户使用手册.txt（完整中文，53KB）。8 题全部基于手册真实章节原文出题（通道管理/实体字段/周期发送/转发监控/测试报告/运行环境等），expect_sources 统一指向手册 txt。",
   "topk": 3,
   "questions": [
     {
-      "q": "SimulatorAssistant 的核心目标是什么？",
-      "expect_sources": ["项目说明.txt"],
-      "expect_keywords": ["本地", "对话助手"],
+      "q": "模拟器软件支持哪些通道类型？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["UDP组播", "UDP单播", "WEB-STOMP", "REDIS"],
       "must": true
     },
     {
-      "q": "当前加载的对话模型是什么？",
-      "expect_sources": ["项目说明.txt"],
-      "expect_keywords": ["Qwen2.5", "7B"],
-      "must": true
-    },
-    {
-      "q": "RAG 检索增强生成是怎么工作的？",
-      "expect_sources": ["项目说明.txt"],
-      "expect_keywords": ["bge", "向量"],
-      "must": true
-    },
-    {
-      "q": "知识库支持哪些文件格式？",
-      "expect_sources": ["项目说明.txt"],
-      "expect_keywords": ["txt", "md"],
-      "must": true
-    },
-    {
-      "q": "知识库文本切块的大小和重叠是多少？",
-      "expect_sources": ["项目说明.txt"],
-      "expect_keywords": ["240", "40"],
-      "must": true
-    },
-    {
-      "q": "RAG 开关在哪里？",
-      "expect_sources": ["项目说明.txt"],
-      "expect_keywords": ["设置", "RAG"],
-      "must": true
-    },
-    {
-      "q": "怎么发送带标签的字段数据？",
-      "expect_sources": ["模拟器软件用户使用手册（2025.6.30更新）.doc"],
-      "expect_keywords": ["标签"],
+      "q": "如何新增UDP组播发送通道？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["UDP组播", "网卡", "IP地址", "端口号", "发送"],
       "must": false
+    },
+    {
+      "q": "通道的导入和导出文件格式是什么？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["导入", "导出", ".channel"],
+      "must": false
+    },
+    {
+      "q": "实体字段支持哪些数据类型？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["数据类型", "Int64", "Double", "buffer"],
+      "must": true
+    },
+    {
+      "q": "如何配置周期发送？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["周期", "发送次数", "启动"],
+      "must": false
+    },
+    {
+      "q": "转发监控支持哪些转发方式？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["转发", "数据源", "UDP"],
+      "must": false
+    },
+    {
+      "q": "如何生成测试报告？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["测试管理", "生成测试报告", "PDF"],
+      "must": false
+    },
+    {
+      "q": "模拟器软件的运行环境要求是什么？",
+      "expect_sources": ["模拟器软件用户使用手册.txt"],
+      "expect_keywords": ["中标麒麟", "银河麒麟", "Windows"],
+      "must": true
     }
   ]
 }
