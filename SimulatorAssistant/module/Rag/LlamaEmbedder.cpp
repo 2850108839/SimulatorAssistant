@@ -5,7 +5,12 @@
 #include <cstring>
 
 namespace {
-constexpr int kNCtxEmb = 512;   // bge 最大序列长度
+constexpr int kNCtxEmb = 512;   // bge 单句最大 token 数（模型训练长度）
+// llama.cpp 0.4.1-dev：n_ctx = n_seq_max × 每序列长度。要支持批量打包多句且每句不截断，
+// 需 n_ctx = nSeqMax × 512；n_ubatch 是单次 graph 上限，批量打包不能超过它。
+constexpr int kSeqMax = 8;      // 贪心打包最多同批句子数
+constexpr int kNBatch = kNCtxEmb * kSeqMax;   // 4096：总上下文
+constexpr int kNUBatch = 2048;  // 单次 encode 最大 token 数（一批实际远小于此）
 }
 
 LlamaEmbedder::~LlamaEmbedder() {
@@ -21,10 +26,10 @@ bool LlamaEmbedder::loadModel(const std::string& modelPath) {
     if (!m_model) return false;
 
     llama_context_params cp = llama_context_default_params();
-    cp.n_ctx        = kNCtxEmb;
-    cp.n_batch      = kNCtxEmb;
-    cp.n_ubatch     = kNCtxEmb;
-    cp.n_seq_max    = 1;
+    cp.n_ctx        = kNBatch;                  // 4096 = kSeqMax × 512（每序列全容量）
+    cp.n_batch      = kNBatch;
+    cp.n_ubatch     = kNUBatch;
+    cp.n_seq_max    = kSeqMax;                  // 批量建索引：贪心打包按句分 seq_id，单序列会 encode 失败
     cp.embeddings   = true;                      // 关键：开启嵌入输出
     cp.pooling_type = LLAMA_POOLING_TYPE_CLS;   // bge 用 [CLS] 池化（与模型默认一致）
     m_ctx = llama_init_from_model(m_model, cp);
@@ -117,7 +122,8 @@ std::vector<std::vector<float>> LlamaEmbedder::embedBatch(const std::vector<std:
         int used = 0;
         while (i < toks.size() && !toks[i].empty()) {
             const int len = (int)toks[i].size();
-            if (!grp.empty() && used + len > nCtx) break;
+            // 同时受 n_ctx、n_ubatch、n_seq_max 三重约束（0.4.1-dev 下超任一即失败/断言）
+            if (!grp.empty() && (used + len > nCtx || used + len > kNUBatch || (int)grp.size() >= kSeqMax)) break;
             grp.push_back((int)i);
             used += len;
             ++i;
