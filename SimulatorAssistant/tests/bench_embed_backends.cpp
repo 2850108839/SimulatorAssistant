@@ -120,6 +120,24 @@ int main() {
               << "ms  每条=" << std::setw(6) << batchO / kDocs.size() << "ms（基类逐句循环）"
               << "  有效=" << nonEmptyO << "/20\n";
 
+    std::cout << "\n[3] ORT intra_op 线程数扫描（单句 5 query x 10 轮平均，线程在 load 前配置）\n";
+    for (int thr : {1, 2, 4, 8}) {
+        OnnxEmbedder e2;
+        e2.setThreads(thr, 1);
+        if (!e2.loadModel("D:/CAI/llama/llama.cpp/models/bge_onnx/model_int8.onnx")) { std::cerr << "onnx 加载失败\n"; return 1; }
+        std::vector<float> v2;
+        e2.embed(kQueries[0], v2, 512); e2.embed(kQueries[0], v2, 512);   // 预热
+        double sum = 0; int cnt = 0;
+        for (int r = 0; r < 10; ++r)
+            for (const auto& q : kQueries) {
+                auto t1 = Clock::now();
+                e2.embed(q, v2, 512);
+                sum += msSince(t1); ++cnt;
+            }
+        std::cout << "  intra=" << std::setw(2) << thr
+                  << "  单句平均=" << std::fixed << std::setprecision(2) << std::setw(7) << sum / cnt << " ms\n";
+    }
+
     std::cout << "\n口径说明：量化不同（Q8_0 26.5MB vs INT8 22.8MB）；批量路径 llama 有贪心打包优化，"
                  "onnx 走逐句。数字为单机端到端表现。\n";
     return 0;

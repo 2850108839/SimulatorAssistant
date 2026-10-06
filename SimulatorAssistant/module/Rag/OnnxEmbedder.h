@@ -40,6 +40,7 @@ public:
     bool embed(const std::string& text, std::vector<float>& vec, int dim = 512) override;
 
     // 线程配置（JD 常考点：intra_op 控制单算子内线程）
+    // 必须在 loadModel() 之前调用才生效；默认 intra=4 / inter=1
     void setThreads(int intra, int inter = 1);
 
 private:
@@ -59,6 +60,8 @@ private:
     std::vector<std::string> m_inNames;   // 输入名：input_ids / attention_mask / token_type_ids
     std::vector<std::string> m_outNames;  // 输出名：last_hidden_state
     int m_dim = 512;                      // 嵌入维度（bge-small-zh = 512）
+    int m_intraOp = 4;                    // intra_op 线程（load 前经 setThreads 修改）
+    int m_interOp = 1;                    // inter_op 线程
 
     // ---- 词表 ----
     std::unordered_map<std::string, int> m_vocab;

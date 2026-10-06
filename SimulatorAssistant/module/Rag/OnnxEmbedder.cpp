@@ -33,8 +33,8 @@ bool OnnxEmbedder::loadModel(const std::string& modelPath) {
 
     m_env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "rag-onnx");
     Ort::SessionOptions so;
-    so.SetIntraOpNumThreads(4);      // 单算子内并行线程
-    so.SetInterOpNumThreads(1);      // 算子间串行即可
+    so.SetIntraOpNumThreads(m_intraOp);  // 单算子内并行线程（load 前 setThreads 可配）
+    so.SetInterOpNumThreads(m_interOp);  // 算子间串行即可
     so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // 图优化全开
     so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
@@ -65,8 +65,9 @@ bool OnnxEmbedder::loadModel(const std::string& modelPath) {
 }
 
 void OnnxEmbedder::setThreads(int intra, int inter) {
-    // 骨架：如需运行时改线程，可在 load 前配置 SessionOptions；此处留占位
-    (void)intra; (void)inter;
+    // 必须在 loadModel() 前调用：SessionOptions 在建 session 时固化线程数
+    m_intraOp = intra > 0 ? intra : 1;
+    m_interOp = inter > 0 ? inter : 1;
 }
 
 // ------------------------------------------------------------------
