@@ -1,23 +1,47 @@
 {
-  "_note": "RAG 检索黄金集（离线评测用）。每条包含：q=问题，expect_sources=期望命中的来源文件名（任意一个出现在 top-k 即算来源命中），expect_keywords=期望在命中片段文本中出现的关键词（可选），must=是否必须命中（true 时未命中则整体判失败）。请把 q / 文件名 / 关键词替换成你真实知识库的内容；空 questions 时 eval_retrieval.py 只做缓存完整性体检。",
+  "_note": "RAG 检索黄金集（离线评测用，2026-10-06 真实化）。题目基于 knowledge_base 真实内容反推：项目说明.txt（真实可读）+ 模拟器软件用户使用手册（2025.6.30更新）.doc（仅少量可读片段——该 .doc 为 WPS 损坏格式，正文 95% 乱码，Word COM 亦无法转换，详见工程复盘）。eval_retrieval.py 用 BM25 词法腿复现混合检索的词法部分。",
   "topk": 3,
   "questions": [
     {
-      "q": "如何配置转发监控？",
-      "expect_sources": ["监控配置.docx"],
-      "expect_keywords": ["转发"],
+      "q": "SimulatorAssistant 的核心目标是什么？",
+      "expect_sources": ["项目说明.txt"],
+      "expect_keywords": ["本地", "对话助手"],
       "must": true
     },
     {
-      "q": "告警阈值应该怎么设置？",
-      "expect_sources": ["告警策略.docx"],
-      "expect_keywords": ["阈值"],
-      "must": false
+      "q": "当前加载的对话模型是什么？",
+      "expect_sources": ["项目说明.txt"],
+      "expect_keywords": ["Qwen2.5", "7B"],
+      "must": true
     },
     {
-      "q": "导出报表支持哪些格式？",
-      "expect_sources": ["报表导出.doc"],
-      "expect_keywords": ["Excel", "PDF"],
+      "q": "RAG 检索增强生成是怎么工作的？",
+      "expect_sources": ["项目说明.txt"],
+      "expect_keywords": ["bge", "向量"],
+      "must": true
+    },
+    {
+      "q": "知识库支持哪些文件格式？",
+      "expect_sources": ["项目说明.txt"],
+      "expect_keywords": ["txt", "md"],
+      "must": true
+    },
+    {
+      "q": "知识库文本切块的大小和重叠是多少？",
+      "expect_sources": ["项目说明.txt"],
+      "expect_keywords": ["240", "40"],
+      "must": true
+    },
+    {
+      "q": "RAG 开关在哪里？",
+      "expect_sources": ["项目说明.txt"],
+      "expect_keywords": ["设置", "RAG"],
+      "must": true
+    },
+    {
+      "q": "怎么发送带标签的字段数据？",
+      "expect_sources": ["模拟器软件用户使用手册（2025.6.30更新）.doc"],
+      "expect_keywords": ["标签"],
       "must": false
     }
   ]
