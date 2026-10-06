@@ -29,6 +29,18 @@ isEmpty(ORT_DIR): ORT_DIR = D:/CAI/llama/onnxruntime/onnxruntime-win-x64-1.30.0
 INCLUDEPATH += $$ORT_DIR/include
 LIBS += $$ORT_DIR/lib/onnxruntime.lib
 
+# -----------------------------------------------------------------------------
+# Debug 构建链接 Release 版 ONNX Runtime：
+# ORT 官方发布包只有 Release 版（/MD），Debug 默认 _ITERATOR_DEBUG_LEVEL=2，
+# 链接会报 LNK2038（"_ITERATOR_DEBUG_LEVEL" 不匹配）。
+# 这里给 Debug 构建统一加 /D_ITERATOR_DEBUG_LEVEL=0，与 Release 版 STL ABI 对齐。
+# 代价：Debug 构建的 STL 迭代器调试被关闭（个人项目可接受）；
+# 更正统的做法是下载 ORT 官方 debug 包（onnxruntime-win-x64-<ver>-debug）。
+# -----------------------------------------------------------------------------
+CONFIG(debug, debug|release) {
+    win32-msvc*: QMAKE_CXXFLAGS += /D_ITERATOR_DEBUG_LEVEL=0
+}
+
 # Qt 私有头（qzipreader_p.h，用于解压 .docx）
 # - 通过 core-private / gui-private 模块自动引入私有包含路径（正规做法）
 # - 同时显式加入版本化目录 QtCore/6.5.3、QtGui/6.5.3，
